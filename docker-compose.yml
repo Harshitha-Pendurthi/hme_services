@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+  # MySQL Database
+  database:
+    build:
+      context: ./database
+      dockerfile: Dockerfile
+    container_name: home-services-db
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: home_services_db
+      MYSQL_USER: homeservices
+      MYSQL_PASSWORD: homeservices123
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - mysql_logs:/var/log/mysql
+    networks:
+      - home-services-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ppassword"]
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+      interval: 30s
+
+  # Spring Boot Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: home-services-backend
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://database:3306/home_services_db
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: password
+      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+      JWT_SECRET: mySecretKey123456789012345678901234567890
+      JWT_EXPIRATION: 86400000
+      CORS_ALLOWED_ORIGINS: http://localhost:3000,http://frontend:80
+    ports:
+      - "8080:8080"
+    depends_on:
+      database:
+        condition: service_healthy
+    networks:
+      - home-services-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/actuator/health"]
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+      interval: 30s
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: home-services-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - home-services-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/health"]
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+      interval: 30s
+
+  # Tomcat for deployment (production)
+  tomcat:
+    image: tomcat:10.1-jdk17
+    container_name: home-services-tomcat
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./backend/target/*.war:/usr/local/tomcat/webapps/home-services.war
+    environment:
+      CATALINA_OPTS: "-Xmx512m -Xms256m"
+    networks:
+      - home-services-network
+    restart: unless-stopped
+    profiles:
+      - production
+
+volumes:
+  mysql_data:
+    driver: local
+  mysql_logs:
+    driver: local
+
+networks:
+  home-services-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  # Staging Database
+  staging-database:
+    build:
+      context: ./database
+      dockerfile: Dockerfile
+    container_name: home-services-staging-db
+    environment:
+      MYSQL_ROOT_PASSWORD: ${STAGING_DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: home_services_staging_db
+      MYSQL_USER: ${STAGING_DB_USER}
+      MYSQL_PASSWORD: ${STAGING_DB_PASSWORD}
+    volumes:
+      - staging_mysql_data:/var/lib/mysql
+      - staging_mysql_logs:/var/log/mysql
+    networks:
+      - staging-network
+    restart: unless-stopped
+
+  # Staging Backend
+  staging-backend:
+    image: ${DOCKER_HUB_REPO}-backend:latest
+    container_name: home-services-staging-backend
+    environment:
+      SPRING_PROFILES_ACTIVE: staging
+      SPRING_DATASOURCE_URL: jdbc:mysql://staging-database:3306/home_services_staging_db
+      SPRING_DATASOURCE_USERNAME: ${STAGING_DB_USER}
+      SPRING_DATASOURCE_PASSWORD: ${STAGING_DB_PASSWORD}
+      JWT_SECRET: ${STAGING_JWT_SECRET}
+      JWT_EXPIRATION: 86400000
+      CORS_ALLOWED_ORIGINS: http://staging-server.com
+    ports:
+      - "8080:8080"
+    depends_on:
+      - staging-database
+    networks:
+      - staging-network
+    restart: unless-stopped
+
+  # Staging Frontend
+  staging-frontend:
+    image: ${DOCKER_HUB_REPO}-frontend:latest
+    container_name: home-services-staging-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - staging-backend
+    networks:
+      - staging-network
+    restart: unless-stopped
+
+volumes:
+  staging_mysql_data:
+  staging_mysql_logs:
+
+networks:
+  staging-network:
+    driver: bridge

@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  # Test Database
+  test-database:
+    build:
+      context: ./database
+      dockerfile: Dockerfile
+    container_name: home-services-test-db
+    environment:
+      MYSQL_ROOT_PASSWORD: testpassword
+      MYSQL_DATABASE: home_services_test_db
+      MYSQL_USER: testuser
+      MYSQL_PASSWORD: testpass
+    ports:
+      - "3307:3306"
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptestpassword"]
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+      interval: 10s
+
+  # Test Backend
+  test-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: home-services-test-backend
+    environment:
+      SPRING_PROFILES_ACTIVE: test
+      SPRING_DATASOURCE_URL: jdbc:mysql://test-database:3306/home_services_test_db
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: testpassword
+      SPRING_JPA_HIBERNATE_DDL_AUTO: create-drop
+      JWT_SECRET: testSecretKey123456789012345678901234567890
+      JWT_EXPIRATION: 86400000
+    ports:
+      - "8081:8080"
+    depends_on:
+      test-database:
+        condition: service_healthy
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/actuator/health"]
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+      interval: 30s
+
+  # Test Frontend
+  test-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: home-services-test-frontend
+    environment:
+      REACT_APP_API_URL: http://test-backend:8080/api
+    ports:
+      - "3001:80"
+    depends_on:
+      test-backend:
+        condition: service_healthy
+    networks:
+      - test-network
+
+networks:
+  test-network:
+    driver: bridge
